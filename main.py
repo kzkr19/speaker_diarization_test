@@ -127,7 +127,7 @@ class Command:
             print(f'{file} is {predicted_class}')
             pair[file] = predicted_class
 
-        basename = os.path.basename(folder)
+        basename = os.path.basename(os.path.dirname(folder))
         result_path = os.path.join(
             working_directory, f'result-{basename}.json')
 
