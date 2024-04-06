@@ -8,123 +8,134 @@ import os
 from sklearn.svm import SVC
 import pickle
 from transformers import AutoFeatureExtractor, AutoModel
+import hashlib
 
 
-def load_hubert_model():
-    model_name = 'rinna/japanese-hubert-base'
-    feature_extractor = AutoFeatureExtractor.from_pretrained(model_name)
-    hubert_model = AutoModel.from_pretrained(model_name)
-    hubert_model.eval()
-
-    return feature_extractor, hubert_model
+def sha256hash(file_path):
+    with open(file_path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 
-def extract_features(file_path, feature_extractor, hubert_model, working_directory):
-    # NOTE: This function has side effects to save processed audio file
-    basename = os.path.basename(file_path)
-    preprocessed_dir = os.path.join(working_directory, 'preprocessed')
-    preprocessed_file_path = os.path.join(preprocessed_dir, basename + '.npy')
+class SpeakerIdentification:
+    def __init__(self,
+                 working_directory,
+                 model_name='rinna/japanese-hubert-base',
+                 sampling_rate=16000):
+        self.working_directory = working_directory
+        self.feature_directory = os.path.join(
+            working_directory, 'features')
+        self.model_path = os.path.join(working_directory, 'model.pkl')
 
-    if os.path.exists(preprocessed_file_path):
-        return np.load(preprocessed_file_path)
+        os.makedirs(self.feature_directory, exist_ok=True)
 
-    os.makedirs(preprocessed_dir, exist_ok=True)
+        self.load_hubert_model(model_name)
+        self.sampling_rate = sampling_rate
+        self.model = None
 
-    SAMPLING_RATE = 16000
+    def load_hubert_model(self, model_name):
+        self.feature_extractor = AutoFeatureExtractor.from_pretrained(
+            model_name)
+        self.hubert_model = AutoModel.from_pretrained(model_name)
+        self.hubert_model.eval()
 
-    waveform, sample_rate = torchaudio.load(file_path)
-    if sample_rate != SAMPLING_RATE:
-        waveform = torchaudio.transforms.Resample(
-            sample_rate, SAMPLING_RATE)(waveform)
+    def extract_features(self, file_path):
+        # NOTE: This function has side effects to save processed audio file
+        feature_filename = sha256hash(file_path) + '.npy'
+        preprocessed_file_path = os.path.join(
+            self.feature_directory, feature_filename)
 
-    input_values = feature_extractor(
-        waveform[0], return_tensors='pt', sampling_rate=SAMPLING_RATE)
+        # NOTE: only use mean of hidden states
+        def preprocess(x): return x.mean(axis=0).reshape(-1)
 
-    with torch.no_grad():
-        output = hubert_model(**input_values)
-    retval = output.last_hidden_state.mean(1).detach().numpy()[0]
+        if os.path.exists(preprocessed_file_path):
+            return preprocess(np.load(preprocessed_file_path))
 
-    np.save(preprocessed_file_path, retval)
+        waveform, sample_rate = torchaudio.load(file_path)
+        if sample_rate != self.sampling_rate:
+            waveform = torchaudio.transforms.Resample(
+                sample_rate, self.sampling_rate)(waveform)
 
-    return retval
+        input_values = self.feature_extractor(
+            waveform[0], return_tensors='pt',
+            sampling_rate=self.sampling_rate)
 
+        with torch.no_grad():
+            output = self.hubert_model(**input_values)
+        # retval = output.last_hidden_state.mean(1).detach().numpy()[0]
+        retval = output.last_hidden_state.detach().numpy()[0]
 
-def create_training_data(folder, working_directory):
-    folders = glob.glob(folder + '/*')
-    feature_extractor, hubert_model = load_hubert_model()
+        np.save(preprocessed_file_path, retval)
 
-    class_names = [os.path.basename(folder) for folder in folders]
-    x_train = []
-    y_train = []
+        return preprocess(retval)
 
-    for folder, class_name in zip(folders, class_names):
-        print(f'Processing {class_name}...')
-        for file in glob.glob(folder + '/*.wav'):
-            print(file)
-            features = extract_features(
-                file, feature_extractor, hubert_model, working_directory)
+    def create_training_data(self, dataset_folder):
+        folders = glob.glob(dataset_folder + '/*')
 
-            x_train.append(features)
-            y_train.append(class_name)
+        class_names = [os.path.basename(folder) for folder in folders]
+        x_train = []
+        y_train = []
 
-    return np.array(x_train), np.array(y_train)
+        for dataset_folder, class_name in zip(folders, class_names):
+            print(f'Processing {class_name}...')
+            for file in glob.glob(dataset_folder + '/*.wav'):
+                print(file)
+                features = self.extract_features(file)
 
+                x_train.append(features)
+                y_train.append(class_name)
 
-def predict_single(model, feature_extractor, file_path, hubert_model, working_directory):
-    features = extract_features(
-        file_path, feature_extractor, hubert_model, working_directory)
-    predicted_class = model.predict(features.reshape(1, -1))[0]
-    return predicted_class
+        return np.array(x_train), np.array(y_train)
 
+    def predict_single(self, file_path):
+        if self.model is None:
+            raise ValueError('Model is not loaded')
 
-def save_model(model, output_model_path):
-    with open(output_model_path, 'wb') as f:
-        pickle.dump(model, f)
+        features = self.extract_features(file_path)
+        predicted_class = self.model.predict(features.reshape(1, -1))[0]
+        return predicted_class
 
+    def learn_model(self, dataset_folder):
+        x_train, y_train = self.create_training_data(dataset_folder)
+        os.makedirs(self.working_directory, exist_ok=True)
 
-def load_model(model_path):
-    with open(model_path, 'rb') as f:
-        model = pickle.load(f)
-    return model
+        self.model = SVC(kernel='linear', C=1)
+        self.model.fit(x_train, y_train)
+
+        # show accuracy
+        print(self.model.score(x_train, y_train))
+
+        self.save_model()
+
+    def save_model(self):
+        with open(self.model_path, 'wb') as f:
+            pickle.dump(self.model, f)
+
+    def load_model(self, model_path):
+        with open(model_path, 'rb') as f:
+            self.model = pickle.load(f)
 
 
 class Command:
     def learn_model(self, dataset_folder, working_directory):
-        os.makedirs(working_directory, exist_ok=True)
-
-        output_model_path = os.path.join(working_directory, 'model.pkl')
-        x_train, y_train = create_training_data(
-            dataset_folder, working_directory)
-
-        model = SVC(kernel='linear', C=1)
-        model.fit(x_train, y_train)
-
-        # show accuracy
-        print(model.score(x_train, y_train))
-
-        save_model(model, output_model_path)
+        manager = SpeakerIdentification(working_directory)
+        manager.learn_model(dataset_folder)
+        manager.save_model()
 
     def predict_single(self, file_path, working_directory):
-        output_model_path = os.path.join(working_directory, 'model.pkl')
-
-        model = load_model(output_model_path)
-        feature_extractor, hubert_model = load_hubert_model()
-
-        predicted_class = predict_single(
-            model, feature_extractor, file_path, hubert_model, working_directory)
+        manager = SpeakerIdentification(working_directory)
+        manager.load_model(manager.model_path)
+        predicted_class = manager.predict_single(file_path)
         print(f'{file_path} is {predicted_class}')
 
     def predict_folder(self, folder, working_directory):
-        output_model_path = os.path.join(working_directory, 'model.pkl')
-
-        model = load_model(output_model_path)
-        feature_extractor, hubert_model = load_hubert_model()
+        manager = SpeakerIdentification(working_directory)
+        manager.load_model(manager.model_path)
 
         pair = {}
         for file in glob.glob(folder + '/*.wav'):
-            predicted_class = predict_single(
-                model, feature_extractor, file, hubert_model, working_directory)
+            predicted_class = manager.predict_single(file)
             print(f'{file} is {predicted_class}')
+
             pair[file] = predicted_class
 
         basename = os.path.basename(os.path.dirname(folder))
