@@ -9,6 +9,7 @@ from sklearn.svm import SVC
 import pickle
 from transformers import AutoFeatureExtractor, AutoModel
 import hashlib
+import tqdm
 
 
 def sha256hash(file_path):
@@ -77,8 +78,8 @@ class SpeakerIdentification:
 
         for dataset_folder, class_name in zip(folders, class_names):
             print(f'Processing {class_name}...')
-            for file in glob.glob(dataset_folder + '/*.wav'):
-                print(file)
+            files = glob.glob(dataset_folder + '/*.wav')
+            for file in tqdm.tqdm(files):
                 features = self.extract_features(file)
 
                 x_train.append(features)
