@@ -41,6 +41,11 @@ Run(Prediction): Predict speaker with learned model.
 python main.py predict_single ./xxx.wav ./working_directory
 ```
 
+Predict files in specified folder.
+```bash
+python main.py predict_folder ./target_folder ./working_directory
+```
+
 ## Reference
 * [rinna/japanese-hubert-base · Hugging Face](https://huggingface.co/rinna/japanese-hubert-base)
 * [GitHub - pyannote/pyannote-audio: Neural building blocks for speaker diarization](https://github.com/pyannote/pyannote-audio?tab=readme-ov-file#pyannoteaudio-speaker-diarization-toolkit)
