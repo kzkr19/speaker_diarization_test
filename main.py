@@ -10,6 +10,7 @@ import pickle
 from transformers import AutoFeatureExtractor, AutoModel
 import hashlib
 import tqdm
+from sklearn.model_selection import train_test_split
 
 
 def sha256hash(file_path):
@@ -27,6 +28,7 @@ class SpeakerIdentification:
             working_directory, 'features')
         self.model_path = os.path.join(working_directory, 'model.pkl')
 
+        os.makedirs(self.working_directory, exist_ok=True)
         os.makedirs(self.feature_directory, exist_ok=True)
 
         self.load_hubert_model(model_name)
@@ -100,15 +102,17 @@ class SpeakerIdentification:
         predicted_class = self.model.predict(features.reshape(1, -1))[0]
         return predicted_class
 
-    def learn_model(self, dataset_folder):
+    def learn_model(self, dataset_folder, train_ratio=0.8):
         x_train, y_train = self.create_training_data(dataset_folder)
-        os.makedirs(self.working_directory, exist_ok=True)
+
+        x_train, x_test, y_train, y_test = train_test_split(
+            x_train, y_train, train_size=train_ratio)
 
         self.model = SVC(kernel='linear', C=1)
         self.model.fit(x_train, y_train)
 
         # show accuracy
-        print(self.model.score(x_train, y_train))
+        print(self.model.score(x_test, y_test))
 
         self.save_model()
 
