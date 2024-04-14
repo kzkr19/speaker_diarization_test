@@ -47,3 +47,4 @@ python main.py predict_single ./xxx.wav ./working_directory
 
 ## Reference
 * [rinna/japanese-hubert-base · Hugging Face](https://huggingface.co/rinna/japanese-hubert-base)
+* [GitHub - pyannote/pyannote-audio: Neural building blocks for speaker diarization](https://github.com/pyannote/pyannote-audio?tab=readme-ov-file#pyannoteaudio-speaker-diarization-toolkit)
