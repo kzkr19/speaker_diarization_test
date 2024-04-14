@@ -39,35 +39,40 @@ class SpeakerIdentification:
         self.hubert_model = AutoModel.from_pretrained(model_name)
         self.hubert_model.eval()
 
-    def extract_features(self, file_path):
+    def extract_features(self, file_path, preprocess="average"):
         # NOTE: This function has side effects to save processed audio file
         feature_filename = sha256hash(file_path) + '.npy'
         preprocessed_file_path = os.path.join(
             self.feature_directory, feature_filename)
 
-        # NOTE: only use mean of hidden states
-        def preprocess(x): return x.mean(axis=0).reshape(-1)
-
         if os.path.exists(preprocessed_file_path):
-            return preprocess(np.load(preprocessed_file_path))
+            retval = np.load(preprocessed_file_path)
+        else:
+            waveform, sample_rate = torchaudio.load(file_path)
+            if sample_rate != self.sampling_rate:
+                waveform = torchaudio.transforms.Resample(
+                    sample_rate, self.sampling_rate)(waveform)
 
-        waveform, sample_rate = torchaudio.load(file_path)
-        if sample_rate != self.sampling_rate:
-            waveform = torchaudio.transforms.Resample(
-                sample_rate, self.sampling_rate)(waveform)
+            input_values = self.feature_extractor(
+                waveform[0], return_tensors='pt',
+                sampling_rate=self.sampling_rate)
 
-        input_values = self.feature_extractor(
-            waveform[0], return_tensors='pt',
-            sampling_rate=self.sampling_rate)
+            with torch.no_grad():
+                output = self.hubert_model(**input_values)
+            # retval = output.last_hidden_state.mean(1).detach().numpy()[0]
+            retval = output.last_hidden_state.detach().numpy()[0]
 
-        with torch.no_grad():
-            output = self.hubert_model(**input_values)
-        # retval = output.last_hidden_state.mean(1).detach().numpy()[0]
-        retval = output.last_hidden_state.detach().numpy()[0]
+            np.save(preprocessed_file_path, retval)
 
-        np.save(preprocessed_file_path, retval)
-
-        return preprocess(retval)
+        if preprocess == "average":
+            return retval.mean(axis=0).reshape(-1)
+        elif preprocess == "raw":
+            return retval
+        elif callable(preprocess):
+            return preprocess(retval)
+        else:
+            raise ValueError(
+                "preprocess should be 'average', 'raw' or callable")
 
     def create_training_data(self, dataset_folder):
         folders = glob.glob(dataset_folder + '/*')
