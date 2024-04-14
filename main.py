@@ -1,3 +1,4 @@
+import shutil
 import fire
 import torch
 import torchaudio
@@ -154,6 +155,34 @@ class Command:
 
         with open(result_path, 'w') as f:
             json.dump(pair, f)
+
+    def classfy_files(self, result_path, output_folder, mode="copy"):
+        with open(result_path) as f:
+            result = json.load(f)
+
+        func = shutil.move if mode == "move" else shutil.copy
+
+        for file, class_name in result.items():
+            class_folder = os.path.join(output_folder, class_name)
+            os.makedirs(class_folder, exist_ok=True)
+
+            func(file, class_folder)
+
+    def extract_class(self, class_name, working_directory, mode="copy"):
+        copy_folder = os.path.join(working_directory, class_name)
+        json_list = glob.glob(working_directory + '/result-*.json')
+
+        os.makedirs(copy_folder, exist_ok=True)
+
+        func = shutil.move if mode == "move" else shutil.copy
+
+        for result_path in json_list:
+            with open(result_path) as f:
+                result = json.load(f)
+
+            for file, predicted_class in result.items():
+                if predicted_class == class_name:
+                    func(file, copy_folder)
 
 
 def main():
