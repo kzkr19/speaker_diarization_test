@@ -1,7 +1,8 @@
-# speaker_identification_test
+# Speaker Diarization Test
 
 ## Abstract
-Snippet to identify speaker with HuBERT model(rinna/japanese-hubert-base).
+Snippet for speaker diarization with HuBERT model(rinna/japanese-hubert-base).
+This repository is made for my studying, you should use pyannote-audio.
 
 ## Usage
 
@@ -39,11 +40,6 @@ Run(Prediction): Predict speaker with learned model.
 ```bash
 python main.py predict_single ./xxx.wav ./working_directory
 ```
-
-## TODO
-* [ ] refactor code
-* [ ] batch processing for prediction
-* [ ] fix problems which occur if same basename files exist.
 
 ## Reference
 * [rinna/japanese-hubert-base · Hugging Face](https://huggingface.co/rinna/japanese-hubert-base)
